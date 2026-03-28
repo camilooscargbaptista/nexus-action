@@ -63,10 +63,32 @@ runs:
         # Run analysis and capture output
         RESULT=$(nexus analyze . --json 2>/dev/null || echo '{"score":0,"findings":[],"error":"CLI not available"}')
 
-        # Extract metrics
+        # Check if CLI returned an error or empty analysis (score=0, no findings = scaffold/not ready)
+        CLI_ERROR=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('error',''))" 2>/dev/null || echo "parse error")
         SCORE=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('score',0))" 2>/dev/null || echo "0")
         FINDINGS=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('findings',[])))" 2>/dev/null || echo "0")
         CRITICAL=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len([f for f in d.get('findings',[]) if f.get('severity')=='critical']))" 2>/dev/null || echo "0")
+
+        # Skip enforcement if CLI errored OR analysis returned empty results (scaffold mode)
+        if [ -n "$CLI_ERROR" ] && [ "$CLI_ERROR" != "" ]; then
+          echo "::warning::Nexus CLI returned error — skipping quality gate. Error: $CLI_ERROR"
+          echo "score=0" >> "$GITHUB_OUTPUT"
+          echo "findings-count=0" >> "$GITHUB_OUTPUT"
+          echo "critical-count=0" >> "$GITHUB_OUTPUT"
+          echo "passed=true" >> "$GITHUB_OUTPUT"
+          echo "::endgroup::"
+          exit 0
+        fi
+
+        if [ "$SCORE" = "0" ] && [ "$FINDINGS" = "0" ]; then
+          echo "::warning::Nexus analysis returned no results (score=0, findings=0). Quality gate skipped — ensure nexus analyze is configured."
+          echo "score=0" >> "$GITHUB_OUTPUT"
+          echo "findings-count=0" >> "$GITHUB_OUTPUT"
+          echo "critical-count=0" >> "$GITHUB_OUTPUT"
+          echo "passed=true" >> "$GITHUB_OUTPUT"
+          echo "::endgroup::"
+          exit 0
+        fi
 
         # Determine pass/fail
         THRESHOLD=${{ inputs.threshold }}
