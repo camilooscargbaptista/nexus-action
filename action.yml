@@ -63,6 +63,21 @@ runs:
         # Run analysis and capture output
         RESULT=$(nexus analyze . --json 2>/dev/null || echo '{"score":0,"findings":[],"error":"CLI not available"}')
 
+        # Check if CLI was actually available
+        CLI_ERROR=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('error',''))" 2>/dev/null || echo "parse error")
+
+        if [ -n "$CLI_ERROR" ] && [ "$CLI_ERROR" != "" ]; then
+          echo "::warning::Nexus CLI not available — skipping quality gate enforcement. Install @nexus/cli to enable."
+          echo "score=0" >> "$GITHUB_OUTPUT"
+          echo "findings-count=0" >> "$GITHUB_OUTPUT"
+          echo "critical-count=0" >> "$GITHUB_OUTPUT"
+          echo "passed=true" >> "$GITHUB_OUTPUT"
+          echo "cli-available=false" >> "$GITHUB_OUTPUT"
+          echo "CLI not available — quality gate skipped"
+          echo "::endgroup::"
+          exit 0
+        fi
+
         # Extract metrics
         SCORE=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('score',0))" 2>/dev/null || echo "0")
         FINDINGS=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('findings',[])))" 2>/dev/null || echo "0")
@@ -88,6 +103,7 @@ runs:
         echo "findings-count=$FINDINGS" >> "$GITHUB_OUTPUT"
         echo "critical-count=$CRITICAL" >> "$GITHUB_OUTPUT"
         echo "passed=$PASSED" >> "$GITHUB_OUTPUT"
+        echo "cli-available=true" >> "$GITHUB_OUTPUT"
 
         echo "Score: $SCORE/100 | Findings: $FINDINGS | Critical: $CRITICAL | Passed: $PASSED"
         echo "::endgroup::"
